@@ -183,14 +183,23 @@ async function upsertZones(zones: Zone[]) {
 }
 
 async function deleteMissing(table: "locations" | "signs" | "zones", keepIds: string[]) {
+  // Safer than building a raw `in.(...)` string (which can break UUID parsing on PostgREST).
+  // Strategy:
+  // 1) Read all existing ids
+  // 2) Delete only those NOT present in keepIds using `.in("id", missing)`
   const sb = supabaseAdmin();
-  if (keepIds.length === 0) {
-    const res = await sb.from(table).delete().neq("id", "00000000-0000-0000-0000-000000000000");
-    if (res.error) throw new Error(res.error.message);
-    return;
-  }
-  const res = await sb.from(table).delete().not("id", "in", `(${keepIds.join(",")})`);
-  if (res.error) throw new Error(res.error.message);
+
+  const sel = await sb.from(table).select("id");
+  if (sel.error) throw new Error(sel.error.message);
+
+  const existing = (sel.data ?? []).map((r: any) => String(r.id));
+  const keep = new Set(keepIds);
+  const missing = existing.filter((id) => !keep.has(id));
+
+  if (missing.length === 0) return;
+
+  const del = await sb.from(table).delete().in("id", missing);
+  if (del.error) throw new Error(del.error.message);
 }
 
 export async function applySnapshot(next: AppData, allowDeletes: boolean): Promise<AppData> {
@@ -203,9 +212,9 @@ export async function applySnapshot(next: AppData, allowDeletes: boolean): Promi
   await upsertSigns(next.signs);
 
   if (allowDeletes) {
-    await deleteMissing("signs", next.signs.map((s) => `'${s.id}'`));
-    await deleteMissing("zones", next.zones.map((z) => `'${z.id}'`));
-    await deleteMissing("locations", next.locations.map((l) => `'${l.id}'`));
+    await deleteMissing("signs", next.signs.map((s) => s.id));
+    await deleteMissing("zones", next.zones.map((z) => z.id));
+    await deleteMissing("locations", next.locations.map((l) => l.id));
   }
 
   return readAll();

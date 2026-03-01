@@ -155,7 +155,7 @@ export default function MapView(props: {
 
   return (
     <div className="relative h-[calc(100vh-56px)] w-full">
-      <div className="absolute left-3 top-3 z-[1000] flex flex-wrap gap-2">
+      <div className="absolute left-3 top-3 z-[1000] flex flex-wrap gap-2 rounded-3xl border border-zinc-800 bg-zinc-950/70 p-2 backdrop-blur">
         <Button onClick={() => { setAddMode(v => !v); setZoneMode(false); }} variant={addMode ? "primary" : "ghost"} disabled={!canCreate}>
           {addMode ? "Standort: AN" : "Standort +"}
         </Button>
