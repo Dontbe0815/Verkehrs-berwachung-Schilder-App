@@ -1,11 +1,12 @@
 export const runtime = "nodejs";
 import { NextResponse } from "next/server";
-import { getSessionFromCookies } from "@/lib/session";
+import type { NextRequest } from "next/server";
+import { getSessionFromRequest } from "@/lib/session";
 import { readSettings, writeSettings } from "@/lib/db";
 import type { AppSettings } from "@/lib/types";
 
-export async function GET() {
-  const s = getSessionFromCookies();
+export async function GET(req: NextRequest) {
+  const s = getSessionFromRequest(req);
   if (!s) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const settings = await readSettings();
@@ -16,8 +17,8 @@ export async function GET() {
   }
 }
 
-export async function PUT(req: Request) {
-  const s = getSessionFromCookies();
+export async function PUT(req: NextRequest) {
+  const s = getSessionFromRequest(req);
   if (!s) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (s.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 

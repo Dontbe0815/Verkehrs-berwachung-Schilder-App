@@ -1,13 +1,14 @@
 export const runtime = "nodejs";
 import { NextResponse } from "next/server";
-import { getSessionFromCookies } from "@/lib/session";
+import type { NextRequest } from "next/server";
+import { getSessionFromRequest } from "@/lib/session";
 import { readAll, applySnapshot } from "@/lib/db";
 import type { AppData } from "@/lib/types";
 
 const forbid = () => NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-export async function GET() {
-  const s = getSessionFromCookies();
+export async function GET(req: NextRequest) {
+  const s = getSessionFromRequest(req);
   if (!s) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const data = await readAll();
@@ -18,8 +19,8 @@ export async function GET() {
   }
 }
 
-export async function PUT(req: Request) {
-  const s = getSessionFromCookies();
+export async function PUT(req: NextRequest) {
+  const s = getSessionFromRequest(req);
   if (!s) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (s.role === "spectator") return forbid();
 

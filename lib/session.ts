@@ -1,11 +1,10 @@
 import crypto from "crypto";
 import type { NextRequest } from "next/server";
-import { cookies } from "next/headers";
 
 export type Role = "admin" | "creator" | "spectator";
 export type Session = { sub: string; role: Role; iat: number; exp: number };
 
-const COOKIE = "vz_session";
+export const SESSION_COOKIE = "vz_session";
 
 function b64url(buf: Buffer): string {
   return buf.toString("base64").replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
@@ -31,13 +30,11 @@ export function verify(token: string, secret: string): Session | null {
   const h = parts[0];
   const b = parts[1];
   const sig = parts[2];
-
   if (!h || !b || !sig) return null;
 
   const data = `${h}.${b}`;
   const expected = b64url(crypto.createHmac("sha256", secret).update(data).digest());
 
-  // timingSafeEqual requires same length; fail fast if not equal length
   const a = Buffer.from(expected);
   const c = Buffer.from(sig);
   if (a.length !== c.length) return null;
@@ -53,24 +50,10 @@ export function verify(token: string, secret: string): Session | null {
   }
 }
 
-export function setSessionCookie(token: string): void {
-  cookies().set(COOKIE, token, { httpOnly: true, sameSite: "lax", secure: true, path: "/" });
-}
-export function clearSessionCookie(): void {
-  cookies().set(COOKIE, "", { httpOnly: true, sameSite: "lax", secure: true, path: "/", maxAge: 0 });
-}
-
 export function getSessionFromRequest(req: NextRequest): Session | null {
   const secret = process.env.JWT_SECRET || "";
   if (!secret) return null;
-  const token = req.cookies.get(COOKIE)?.value;
-  if (!token) return null;
-  return verify(token, secret);
-}
-export function getSessionFromCookies(): Session | null {
-  const secret = process.env.JWT_SECRET || "";
-  if (!secret) return null;
-  const token = cookies().get(COOKIE)?.value;
+  const token = req.cookies.get(SESSION_COOKIE)?.value;
   if (!token) return null;
   return verify(token, secret);
 }
