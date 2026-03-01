@@ -21,7 +21,7 @@ function uid(): string {
 
 function ClusterLayer({ locations, onSelect, selectedId }: { locations: Location[]; onSelect: (id: string) => void; selectedId: string | null }) {
   const map = useMap();
-  const clusterRef = useRef<L.MarkerClusterGroup | null>(null);
+  const clusterRef = useRef<any>(null); // markercluster types differ by environment
 
   useEffect(() => {
     if (!clusterRef.current) {
