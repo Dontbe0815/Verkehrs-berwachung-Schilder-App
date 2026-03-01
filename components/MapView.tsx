@@ -80,8 +80,9 @@ function DrawControls({ enabled, onCreated }: { enabled: boolean; onCreated: (ge
     }
     if (!drawRef.current) {
       drawRef.current = new L.Control.Draw({
-        draw: { polygon: true, rectangle: true, polyline: false, circle: false, circlemarker: false, marker: false },
-        edit: false
+        // leaflet-draw typings expect option objects (or false), not boolean true
+        draw: { polygon: {}, rectangle: {}, polyline: false, circle: false, circlemarker: false, marker: false } as any,
+        edit: false as any
       });
       map.addControl(drawRef.current);
     }
