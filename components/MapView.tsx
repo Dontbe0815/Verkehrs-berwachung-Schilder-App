@@ -94,7 +94,7 @@ function DrawControls({ enabled, onCreated }: { enabled: boolean; onCreated: (ge
     };
 
     map.on(L.Draw.Event.CREATED, handler);
-    return () => map.off(L.Draw.Event.CREATED, handler);
+    return () => { map.off(L.Draw.Event.CREATED, handler); };
   }, [enabled, map, onCreated]);
 
   return null;
@@ -106,7 +106,7 @@ function MapClicker({ enabled, onClicked }: { enabled: boolean; onClicked: (lat:
     if (!enabled) return;
     const handler = (e: L.LeafletMouseEvent) => onClicked(e.latlng.lat, e.latlng.lng);
     map.on("click", handler);
-    return () => map.off("click", handler);
+    return () => { map.off("click", handler); };
   }, [enabled, map, onClicked]);
   return null;
 }
