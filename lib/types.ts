@@ -18,8 +18,10 @@ export type Sign = {
   mainLabel: string;
   direction: SignDirection;
   validity: string | null;
-  additional: string[];
+  additional: string[]; // legacy
+  additionalText: string | null;
   notes: string | null;
+  imageUrl: string | null;
   confidence: "confirmed" | "probable" | "unclear";
   isTemporary: boolean;
   expiresAt: string | null; // YYYY-MM-DD

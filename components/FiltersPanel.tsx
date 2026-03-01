@@ -19,7 +19,7 @@ export default function FiltersPanel({ value, onChange }: { value: Filters; onCh
     <div className="space-y-3">
       <div>
         <Label>Suche</Label>
-        <Input value={value.q} onChange={(e) => onChange({ ...value, q: e.target.value })} placeholder="283, Straße, Notiz…" />
+        <Input value={value.q} onChange={(e) => onChange({ ...value, q: e.target.value })} placeholder="VZ 283, Haltverbot, Straße, Notiz…" />
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>

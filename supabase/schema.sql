@@ -59,3 +59,7 @@ values (1, 'Duisburg', 51.4344, 6.7623, 12)
 on conflict (id) do nothing;
 
 create index if not exists signs_location_id_idx on public.signs(location_id);
+
+-- v3: simplified additional sign text + image
+alter table public.signs add column if not exists additional_text text null;
+alter table public.signs add column if not exists image_url text null;

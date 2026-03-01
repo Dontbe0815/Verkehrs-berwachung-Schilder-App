@@ -24,3 +24,12 @@ Env Vars:
 - SPECTATOR_USER/SPECTATOR_PASS
 - SUPABASE_URL
 - SUPABASE_SERVICE_ROLE_KEY
+
+
+## v3: VZ-Auswahl + Bilder
+- VZ-Katalog mit Icons und Suche nach Nummer (z.B. VZ 283)
+- Zusatzzeichen als Freitext
+- Schildfoto Upload (Kamera/Galerie)
+
+### Supabase Storage (für Bilder)
+Supabase Dashboard → Storage → Create bucket `sign-images` → am einfachsten **public** setzen.
