@@ -63,7 +63,7 @@ function ZonesLayer({ zones }: { zones: Zone[] }) {
     if (layerRef.current) { layerRef.current.removeFrom(map); layerRef.current = null; }
     const gj = L.geoJSON(zones.map((z) => z.geojson as any), { style: () => ({ weight: 2, fillOpacity: 0.12 }) });
     gj.addTo(map); layerRef.current = gj;
-    return () => gj.removeFrom(map);
+    return () => { gj.remove(); };
   }, [zones, map]);
 
   return null;
