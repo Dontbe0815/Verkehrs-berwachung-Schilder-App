@@ -2,10 +2,7 @@ import "./globals.css";
 import type { Metadata } from "next";
 import Header from "@/components/Header";
 
-export const metadata: Metadata = {
-  title: "Verkehrszeichen-Karte",
-  description: "Pins, Beschilderung, Zonen & Fotos – mit Freigabeprozess"
-};
+export const metadata: Metadata = { title: "VZ-Karte", description: "Verkehrszeichen-Karte" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

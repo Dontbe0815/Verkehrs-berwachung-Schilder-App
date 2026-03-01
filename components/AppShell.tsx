@@ -1,5 +1,4 @@
 "use client";
-
 import "leaflet/dist/leaflet.css";
 import "leaflet-draw/dist/leaflet.draw.css";
 import "leaflet.markercluster/dist/MarkerCluster.css";
@@ -7,275 +6,155 @@ import "leaflet.markercluster/dist/MarkerCluster.Default.css";
 
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
-import type { LocationRow, SignRow, ZoneRow, ProfileRow } from "@/types/domain";
-import { loadSnapshot, saveSnapshot } from "@/lib/storage";
-import { Card, H2, Muted, Button, Pill } from "@/components/ui";
+import { Button, Card, H2, Muted, Pill } from "@/components/ui";
+import type { AppData, Location, Zone } from "@/lib/types";
 import FiltersPanel, { Filters } from "@/components/FiltersPanel";
 import LocationPanel from "@/components/LocationPanel";
-import ZonesList from "@/components/ZonesList";
-import { ensureProfile } from "@/lib/auth";
+import ZonesPanel from "@/components/ZonesPanel";
+import SettingsPanel from "@/components/SettingsPanel";
 
 const MapView = dynamic(() => import("@/components/MapView"), { ssr: false });
 
-type DataState = {
-  locations: LocationRow[];
-  signs: SignRow[];
-  zones: ZoneRow[];
-};
+type Me = { username: string; role: "admin" | "creator" | "spectator" } | null;
 
 export default function AppShell() {
-  const [profile, setProfile] = useState<ProfileRow | null>(null);
-  const [data, setData] = useState<DataState>({ locations: [], signs: [], zones: [] });
-  const [loading, setLoading] = useState(false);
+  const [me, setMe] = useState<Me>(null);
+  const [data, setData] = useState<AppData | null>(null);
   const [error, setError] = useState<string>("");
-  const [filters, setFilters] = useState<Filters>({
-    q: "",
-    status: "all",
-    signCode: "all",
-    olderThanMonths: 0
-  });
+  const [loading, setLoading] = useState(false);
 
+  const [filters, setFilters] = useState<Filters>({ q: "", status: "all", signCode: "all", includeExpired: false });
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
-  const [panel, setPanel] = useState<"location" | "zones">("location");
+  const [panel, setPanel] = useState<"location" | "zones" | "settings">("location");
 
-  const selectedLocation = useMemo(
-    () => data.locations.find((l) => l.id === selectedLocationId) ?? null,
-    [data.locations, selectedLocationId]
-  );
+  const role = me?.role ?? "spectator";
+  const canCreate = role === "admin" || role === "creator";
+  const canDelete = role === "admin";
 
-  const selectedSigns = useMemo(
-    () => (selectedLocation ? data.signs.filter((s) => s.location_id === selectedLocation.id) : []),
-    [data.signs, selectedLocation]
-  );
+  async function loadAll() {
+    setLoading(true); setError("");
+    try {
+      const [meRes, dataRes] = await Promise.all([
+        fetch("/api/auth/me", { cache:"no-store" }),
+        fetch("/api/data", { cache:"no-store" })
+      ]);
+      if (meRes.ok) setMe(await meRes.json());
+      if (!dataRes.ok) { const j = await dataRes.json().catch(() => ({})); throw new Error(j?.error || "Data load failed"); }
+      setData(await dataRes.json());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unbekannter Fehler");
+    } finally { setLoading(false); }
+  }
+
+  async function saveAll(next: AppData) {
+    setLoading(true); setError("");
+    try {
+      const r = await fetch("/api/data", { method:"PUT", headers:{ "content-type":"application/json" }, body: JSON.stringify(next) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j?.error || "Save failed");
+      setData(j);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Save failed");
+    } finally { setLoading(false); }
+  }
+
+  useEffect(() => { void loadAll(); }, []);
+
+  const settings = data?.settings ?? { defaultCity: "Duisburg", defaultLat: 51.4344, defaultLng: 6.7623, defaultZoom: 12, updatedAt: new Date().toISOString() };
+  const locations = data?.locations ?? [];
+  const signs = data?.signs ?? [];
+  const zones = data?.zones ?? [];
 
   const filteredLocations = useMemo(() => {
     const q = filters.q.trim().toLowerCase();
-    const now = new Date();
-    const cutoff = new Date(now);
-    cutoff.setMonth(cutoff.getMonth() - (filters.olderThanMonths || 0));
-
-    return data.locations.filter((loc) => {
+    return locations.filter((loc) => {
       if (filters.status !== "all" && loc.status !== filters.status) return false;
 
-      if (filters.olderThanMonths) {
-        if (loc.last_verified_at) {
-          const d = new Date(loc.last_verified_at);
-          if (!(d < cutoff)) return false;
-        } // missing date treated as old
-      }
+      const locSigns = signs.filter((s) => s.locationId === loc.id);
+      const visibleSigns = filters.includeExpired ? locSigns : locSigns.filter((s) => s.state !== "expired");
 
       if (filters.signCode !== "all") {
-        const has = data.signs.some((s) => s.location_id === loc.id && s.main_sign_code === filters.signCode);
+        const has = visibleSigns.some((s) => s.mainCode === filters.signCode);
         if (!has) return false;
       }
-
       if (q) {
-        const inStreet = (loc.street_name ?? "").toLowerCase().includes(q);
-        const inSigns = data.signs
-          .filter((s) => s.location_id === loc.id)
-          .some((s) => (s.main_sign_code + " " + s.main_sign_label + " " + (s.notes ?? "")).toLowerCase().includes(q));
+        const inStreet = (loc.street ?? "").toLowerCase().includes(q);
+        const inSigns = visibleSigns.some((s) => (s.mainCode + " " + s.mainLabel + " " + (s.notes ?? "")).toLowerCase().includes(q));
         if (!inStreet && !inSigns) return false;
       }
-
       return true;
     });
-  }, [data.locations, data.signs, filters]);
+  }, [locations, signs, filters]);
 
-  async function loadAll() {
-    setError("");
-    setLoading(true);
+  const selectedLocation = useMemo(() => locations.find((l) => l.id === selectedLocationId) ?? null, [locations, selectedLocationId]);
+  const selectedSigns = useMemo(() => {
+    if (!selectedLocation) return [];
+    const all = signs.filter((s) => s.locationId === selectedLocation.id);
+    return filters.includeExpired ? all : all.filter((s) => s.state !== "expired");
+  }, [signs, selectedLocation, filters.includeExpired]);
 
-    const snap = loadSnapshot();
-
-    try {
-      const p = await ensureProfile();
-      setProfile((p as any) ?? null);
-
-      const { data: sess } = await supabase.auth.getSession();
-      const uid = sess.session?.user.id ?? null;
-
-      if (!uid || !p) {
-        if (snap) {
-          setData({
-            locations: (snap.locations as LocationRow[]) ?? [],
-            signs: (snap.signs as SignRow[]) ?? [],
-            zones: (snap.zones as ZoneRow[]) ?? []
-          });
-        }
-        setLoading(false);
-        return;
-      }
-
-      if (!(p as any).approved) {
-        // Pending: no DB access beyond own profile (RLS will block anyway)
-        if (snap) {
-          setData({
-            locations: (snap.locations as LocationRow[]) ?? [],
-            signs: (snap.signs as SignRow[]) ?? [],
-            zones: (snap.zones as ZoneRow[]) ?? []
-          });
-        } else {
-          setData({ locations: [], signs: [], zones: [] });
-        }
-        setLoading(false);
-        return;
-      }
-
-      const [locRes, signRes, zoneRes] = await Promise.all([
-        supabase.from("locations").select("*").order("created_at", { ascending: false }),
-        supabase.from("signs").select("*").order("created_at", { ascending: false }),
-        supabase.from("zones").select("*").order("created_at", { ascending: false })
-      ]);
-
-      if (locRes.error) throw locRes.error;
-      if (signRes.error) throw signRes.error;
-      if (zoneRes.error) throw zoneRes.error;
-
-      const newData: DataState = {
-        locations: (locRes.data ?? []) as LocationRow[],
-        signs: (signRes.data ?? []) as SignRow[],
-        zones: (zoneRes.data ?? []) as ZoneRow[]
-      };
-      setData(newData);
-
-      saveSnapshot({
-        savedAt: new Date().toISOString(),
-        locations: newData.locations,
-        signs: newData.signs,
-        zones: newData.zones
-      });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Unbekannter Fehler");
-      if (snap) {
-        setData({
-          locations: (snap.locations as LocationRow[]) ?? [],
-          signs: (snap.signs as SignRow[]) ?? [],
-          zones: (snap.zones as ZoneRow[]) ?? []
-        });
-      }
-    } finally {
-      setLoading(false);
-    }
+  if (!data) {
+    return <div className="p-4"><Card><H2>Lade…</H2><Muted className="mt-2">Falls das hängen bleibt: Supabase Env Vars prüfen.</Muted></Card></div>;
   }
-
-  useEffect(() => {
-    void loadAll();
-  }, []);
-
-  const approved = !!profile?.approved;
 
   return (
     <div className="grid min-h-[calc(100vh-56px)] grid-cols-1 lg:grid-cols-[1fr_460px]">
       <div className="relative">
         <MapView
-          profile={profile}
+          settings={settings}
+          role={role}
+          canCreate={canCreate}
           locations={filteredLocations}
-          zones={data.zones}
-          onSelectLocation={(id) => {
-            setSelectedLocationId(id);
-            setPanel("location");
-          }}
+          zones={zones}
           selectedLocationId={selectedLocationId}
-          onDataChanged={() => void loadAll()}
+          onSelectLocation={(id) => { setSelectedLocationId(id); setPanel("location"); }}
+          onCreateLocation={(loc: Location) => { saveAll({ ...data, locations: [loc, ...data.locations] }); }}
+          onCreateZone={(zone: Zone) => { saveAll({ ...data, zones: [zone, ...data.zones] }); }}
         />
       </div>
 
-      {/* Desktop side panel */}
       <aside className="hidden border-l border-zinc-800 bg-zinc-950/60 p-4 lg:block">
         <div className="space-y-4">
           <Card>
             <div className="flex items-start justify-between gap-3">
               <div>
                 <H2>Status</H2>
-                <Muted className="mt-1">
-                  {loading
-                    ? "Lade Daten..."
-                    : !profile
-                    ? "Nicht eingeloggt: Offline-Daten werden ggf. angezeigt."
-                    : !approved
-                    ? "Dein Konto wartet auf Admin-Freigabe."
-                    : "Bereit. Du kannst Standorte, Schilder, Fotos und Zonen verwalten."}
-                </Muted>
+                <Muted className="mt-1">{loading ? "Arbeite..." : `Start: ${settings.defaultCity}`}</Muted>
               </div>
-              {profile ? <Pill>{approved ? "Freigeschaltet" : "Gesperrt"}</Pill> : null}
+              <Pill>{role}</Pill>
             </div>
-
-            {error ? (
-              <div className="mt-3 rounded-2xl border border-rose-800 bg-rose-500/10 p-3 text-sm text-rose-200">
-                {error}
-              </div>
-            ) : null}
-
-            <div className="mt-4">
-              <FiltersPanel value={filters} onChange={setFilters} disabled={!approved} />
+            {error ? <div className="mt-3 rounded-2xl border border-rose-800 bg-rose-500/10 p-3 text-sm text-rose-200">{error}</div> : null}
+            <div className="mt-4"><FiltersPanel value={filters} onChange={setFilters} /></div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button variant={panel === "location" ? "primary" : "ghost"} onClick={() => setPanel("location")}>Standort</Button>
+              <Button variant={panel === "zones" ? "primary" : "ghost"} onClick={() => setPanel("zones")}>Zonen</Button>
+              <Button variant={panel === "settings" ? "primary" : "ghost"} onClick={() => setPanel("settings")} disabled={role !== "admin"}>Einstellungen</Button>
             </div>
-
-            <div className="mt-4 flex gap-2">
-              <Button variant={panel === "location" ? "primary" : "ghost"} onClick={() => setPanel("location")}>
-                Standort
-              </Button>
-              <Button variant={panel === "zones" ? "primary" : "ghost"} onClick={() => setPanel("zones")}>
-                Zonen
-              </Button>
-            </div>
+            <Muted className="mt-3 text-xs">Mobile Schilder laufen nach Ablauf automatisch ab (expired).</Muted>
           </Card>
 
           {panel === "location" ? (
             selectedLocation ? (
-              <LocationPanel
-                userId={profile?.id ?? null}
-                approved={approved}
-                location={selectedLocation}
-                signs={selectedSigns}
-                onDataChanged={() => void loadAll()}
-              />
+              <LocationPanel role={role} canCreate={canCreate} canDelete={canDelete} data={data} location={selectedLocation} signs={selectedSigns} onSave={saveAll} />
             ) : (
-              <Card>
-                <H2>Keine Auswahl</H2>
-                <Muted className="mt-2">Marker anklicken oder „Standort hinzufügen“ nutzen.</Muted>
-              </Card>
+              <Card><H2>Keine Auswahl</H2><Muted className="mt-2">Marker anklicken oder „Standort +“ nutzen.</Muted></Card>
             )
+          ) : panel === "zones" ? (
+            <ZonesPanel role={role} canDelete={canDelete} data={data} zones={zones} onSave={saveAll} />
           ) : (
-            <ZonesList approved={approved} zones={data.zones} onDataChanged={() => void loadAll()} />
+            <SettingsPanel role={role} settings={settings} onSaved={(s) => saveAll({ ...data, settings: s })} />
           )}
         </div>
       </aside>
 
-      {/* Mobile bottom sheet */}
-      <MobileSheet
-        profile={profile}
-        approved={approved}
-        loading={loading}
-        error={error}
-        filters={filters}
-        setFilters={setFilters}
-        panel={panel}
-        setPanel={setPanel}
-        selectedLocation={selectedLocation}
-        selectedSigns={selectedSigns}
-        zones={data.zones}
-        onDataChanged={() => void loadAll()}
-      />
+      <MobileSheet role={role} canCreate={canCreate} canDelete={canDelete} loading={loading} error={error} filters={filters} setFilters={setFilters} panel={panel} setPanel={setPanel} data={data} selectedLocation={selectedLocation} selectedSigns={selectedSigns} zones={zones} settings={settings} onSave={saveAll} />
     </div>
   );
 }
 
-function MobileSheet({
-  profile,
-  approved,
-  loading,
-  error,
-  filters,
-  setFilters,
-  panel,
-  setPanel,
-  selectedLocation,
-  selectedSigns,
-  zones,
-  onDataChanged
-}: any) {
+function MobileSheet(props: any) {
   const [open, setOpen] = useState(true);
+  const { role, canCreate, canDelete, loading, error, filters, setFilters, panel, setPanel, data, selectedLocation, selectedSigns, zones, settings, onSave } = props;
 
   return (
     <div className="lg:hidden">
@@ -285,61 +164,32 @@ function MobileSheet({
             <div className="flex items-center justify-between px-4 py-3">
               <div className="flex items-center gap-2">
                 <div className="h-1.5 w-10 rounded-full bg-zinc-700" />
-                {profile ? <Pill>{approved ? "Freigeschaltet" : "Wartet"}</Pill> : <Pill>Offline</Pill>}
+                <Pill>{role}</Pill>
               </div>
-              <Button variant="ghost" onClick={() => setOpen((v) => !v)}>
-                {open ? "Zu" : "Auf"}
-              </Button>
+              <Button variant="ghost" onClick={() => setOpen((v: boolean) => !v)}>{open ? "Zu" : "Auf"}</Button>
             </div>
 
             <div className="px-4 pb-4">
-              <Muted>
-                {loading
-                  ? "Lade..."
-                  : !profile
-                  ? "Nicht eingeloggt."
-                  : !approved
-                  ? "Konto wartet auf Freigabe."
-                  : "Bereit."}
-              </Muted>
-
-              {error ? (
-                <div className="mt-3 rounded-2xl border border-rose-800 bg-rose-500/10 p-3 text-sm text-rose-200">
-                  {error}
-                </div>
-              ) : null}
-
-              <div className="mt-3">
-                <FiltersPanel value={filters} onChange={setFilters} disabled={!approved} />
-              </div>
-
-              <div className="mt-3 flex gap-2">
-                <Button variant={panel === "location" ? "primary" : "ghost"} onClick={() => setPanel("location")}>
-                  Standort
-                </Button>
-                <Button variant={panel === "zones" ? "primary" : "ghost"} onClick={() => setPanel("zones")}>
-                  Zonen
-                </Button>
+              <Muted>{loading ? "Arbeite..." : `Start: ${settings.defaultCity}`}</Muted>
+              {error ? <div className="mt-3 rounded-2xl border border-rose-800 bg-rose-500/10 p-3 text-sm text-rose-200">{error}</div> : null}
+              <div className="mt-3"><FiltersPanel value={filters} onChange={setFilters} /></div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button variant={panel === "location" ? "primary" : "ghost"} onClick={() => setPanel("location")}>Standort</Button>
+                <Button variant={panel === "zones" ? "primary" : "ghost"} onClick={() => setPanel("zones")}>Zonen</Button>
+                <Button variant={panel === "settings" ? "primary" : "ghost"} onClick={() => setPanel("settings")} disabled={role !== "admin"}>Einstellungen</Button>
               </div>
 
               <div className="mt-4">
                 {panel === "location" ? (
                   selectedLocation ? (
-                    <LocationPanel
-                      userId={profile?.id ?? null}
-                      approved={approved}
-                      location={selectedLocation}
-                      signs={selectedSigns}
-                      onDataChanged={onDataChanged}
-                    />
+                    <LocationPanel role={role} canCreate={canCreate} canDelete={canDelete} data={data} location={selectedLocation} signs={selectedSigns} onSave={onSave} />
                   ) : (
-                    <Card className="p-3">
-                      <H2>Keine Auswahl</H2>
-                      <Muted className="mt-1">Marker anklicken oder hinzufügen.</Muted>
-                    </Card>
+                    <Card className="p-3"><H2>Keine Auswahl</H2><Muted className="mt-1">Marker anklicken oder hinzufügen.</Muted></Card>
                   )
+                ) : panel === "zones" ? (
+                  <ZonesPanel role={role} canDelete={canDelete} data={data} zones={zones} onSave={onSave} />
                 ) : (
-                  <ZonesList approved={approved} zones={zones} onDataChanged={onDataChanged} />
+                  <SettingsPanel role={role} settings={settings} onSaved={(s) => onSave({ ...data, settings: s })} />
                 )}
               </div>
             </div>

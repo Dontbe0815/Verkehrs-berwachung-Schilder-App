@@ -1,7 +1,6 @@
 import type { MetadataRoute } from "next";
-
 export default function manifest(): MetadataRoute.Manifest {
-  const name = process.env.NEXT_PUBLIC_APP_NAME || "Verkehrszeichen-Karte";
+  const name = process.env.NEXT_PUBLIC_APP_NAME || "VZ-Karte";
   return {
     name,
     short_name: "VZ-Karte",
