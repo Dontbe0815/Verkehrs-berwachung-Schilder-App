@@ -27,10 +27,21 @@ export function sign(payload: object, secret: string): string {
 export function verify(token: string, secret: string): Session | null {
   const parts = token.split(".");
   if (parts.length !== 3) return null;
-  const [h, b, s] = parts;
+
+  const h = parts[0];
+  const b = parts[1];
+  const sig = parts[2];
+
+  if (!h || !b || !sig) return null;
+
   const data = `${h}.${b}`;
   const expected = b64url(crypto.createHmac("sha256", secret).update(data).digest());
-  if (!crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(s))) return null;
+
+  // timingSafeEqual requires same length; fail fast if not equal length
+  const a = Buffer.from(expected);
+  const c = Buffer.from(sig);
+  if (a.length !== c.length) return null;
+  if (!crypto.timingSafeEqual(a, c)) return null;
 
   try {
     const payload = JSON.parse(b64urlToBuf(b).toString("utf-8")) as Session;
