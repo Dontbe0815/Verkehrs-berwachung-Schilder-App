@@ -1,3 +1,4 @@
+export const runtime = "nodejs";
 import { NextResponse } from "next/server";
 import { validateLogin } from "@/lib/users";
 import { sign, setSessionCookie } from "@/lib/session";

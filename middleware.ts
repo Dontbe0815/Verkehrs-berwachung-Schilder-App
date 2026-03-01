@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { getSessionFromRequest } from "@/lib/session";
+
+const COOKIE = "vz_session";
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -17,8 +18,8 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  const session = getSessionFromRequest(req);
-  if (!session) {
+  const has = req.cookies.get(COOKIE)?.value;
+  if (!has) {
     const url = req.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("next", pathname);
@@ -27,4 +28,5 @@ export function middleware(req: NextRequest) {
 
   return NextResponse.next();
 }
+
 export const config = { matcher: ["/((?!favicon.ico).*)"] };

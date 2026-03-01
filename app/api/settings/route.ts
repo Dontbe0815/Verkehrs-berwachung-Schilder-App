@@ -1,3 +1,4 @@
+export const runtime = "nodejs";
 import { NextResponse } from "next/server";
 import { getSessionFromCookies } from "@/lib/session";
 import { readSettings, writeSettings } from "@/lib/db";
