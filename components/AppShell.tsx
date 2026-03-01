@@ -12,6 +12,7 @@ import FiltersPanel, { Filters } from "@/components/FiltersPanel";
 import LocationPanel from "@/components/LocationPanel";
 import ZonesPanel from "@/components/ZonesPanel";
 import SettingsPanel from "@/components/SettingsPanel";
+import Toast, { type ToastState } from "@/components/Toast";
 
 const MapView = dynamic(() => import("@/components/MapView"), { ssr: false });
 
@@ -22,6 +23,37 @@ export default function AppShell() {
   const [data, setData] = useState<AppData | null>(null);
   const [error, setError] = useState<string>("");
   const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [toast, setToast] = useState<ToastState>({ open: false, message: "" });
+const [lastBBox, setLastBBox] = useState<string>("");
+
+function mergeData(current: AppData | null, incoming: AppData): AppData {
+  if (!current) return incoming;
+  const locMap = new Map(current.locations.map((l) => [l.id, l]));
+  for (const l of incoming.locations) locMap.set(l.id, l);
+  const signMap = new Map(current.signs.map((s) => [s.id, s]));
+  for (const s of incoming.signs) signMap.set(s.id, s);
+  const zoneMap = new Map(current.zones.map((z) => [z.id, z]));
+  for (const z of incoming.zones) zoneMap.set(z.id, z);
+  return { ...current, settings: incoming.settings ?? current.settings, locations: Array.from(locMap.values()), signs: Array.from(signMap.values()), zones: Array.from(zoneMap.values()), updatedAt: new Date().toISOString() };
+}
+
+async function fetchBBox(bbox: string) {
+  // avoid spamming identical bbox
+  if (!bbox || bbox === lastBBox) return;
+  setLastBBox(bbox);
+  try {
+    const res = await fetch(`/api/data?bbox=${encodeURIComponent(bbox)}`, { cache: "no-store" });
+    if (!res.ok) return;
+    const j = await res.json();
+    const incoming = j.data ?? j;
+    setData((cur) => mergeData(cur, incoming));
+  } catch {
+    // ignore transient viewport load errors
+  }
+}
+  const undoRef = (globalThis as any).__vz_undo_ref ?? { prev: null as any, label: "" };
+  (globalThis as any).__vz_undo_ref = undoRef;
 
   const [filters, setFilters] = useState<Filters>({ q: "", status: "all", signCode: "all", includeExpired: false });
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
@@ -32,32 +64,64 @@ export default function AppShell() {
   const canDelete = role === "admin";
 
   async function loadAll() {
-    setLoading(true); setError("");
-    try {
-      const [meRes, dataRes] = await Promise.all([
-        fetch("/api/auth/me", { cache:"no-store" }),
-        fetch("/api/data", { cache:"no-store" })
-      ]);
-      if (meRes.ok) setMe(await meRes.json());
-      if (!dataRes.ok) { const j = await dataRes.json().catch(() => ({})); throw new Error(j?.error || "Data load failed"); }
-      setData(await dataRes.json());
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Unbekannter Fehler");
-    } finally { setLoading(false); }
-  }
+  setLoading(true); setError("");
+  try {
+    const [meRes] = await Promise.all([
+      fetch("/api/auth/me", { cache:"no-store" })
+    ]);
+    if (meRes.ok) setMe(await meRes.json());
 
-  async function saveAll(next: AppData) {
-    setLoading(true); setError("");
-    try {
-      const r = await fetch("/api/data", { method:"PUT", headers:{ "content-type":"application/json" }, body: JSON.stringify(next) });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j?.error || "Save failed");
-      setData(j);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Save failed");
-    } finally { setLoading(false); }
-  }
+    // initial viewport around default city (Duisburg) with ~0.25° padding
+    const init = { lat: 51.4344, lng: 6.7623, pad: 0.25 };
+    const bbox = `${init.lng - init.pad},${init.lat - init.pad},${init.lng + init.pad},${init.lat + init.pad}`;
+    const dataRes = await fetch(`/api/data?bbox=${encodeURIComponent(bbox)}`, { cache:"no-store" });
+    if (!dataRes.ok) { const j = await dataRes.json().catch(() => ({})); throw new Error(j?.error || "Data load failed"); }
+    const j = await dataRes.json();
+    setData(j.data ?? j); // backward compatible
+    setLastBBox(bbox);
+  } catch (e) {
+    setError(e instanceof Error ? e.message : "Unbekannter Fehler");
+  } finally { setLoading(false); }
+}
 
+// Optimistic apply (UI updates immediately) + background sync (debounced)
+function apply(next: AppData, opts?: { undoLabel?: string; prev?: AppData }) {
+  if (opts?.undoLabel && opts?.prev) {
+    undoRef.prev = opts.prev;
+    undoRef.label = opts.undoLabel;
+    setToast({ open: true, message: `${opts.undoLabel}.`, actionLabel: "Rückgängig", kind: "info", onAction: () => { setData(opts.prev); } });
+  }
+  setData(next);
+}
+
+async function syncToServer(snapshot: AppData) {
+  setSyncing(true); setError("");
+  try {
+    const r = await fetch("/api/data", { method:"PUT", headers:{ "content-type":"application/json" }, body: JSON.stringify(snapshot) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j?.error || "Save failed");
+    setData(j);
+    setToast({ open: true, message: "Gespeichert.", kind: "success" });
+  } catch (e) {
+    setError(e instanceof Error ? e.message : "Save failed");
+    setToast({ open: true, message: "Speichern fehlgeschlagen. Prüfe Verbindung/Env.", kind: "error" });
+  } finally {
+    setSyncing(false);
+  }
+}
+
+// Debounce background sync when data changes due to apply()
+useEffect(() => {
+  if (!data) return;
+  if (loading) return;
+  if (!canCreate) return;
+  const t = setTimeout(() => { void syncToServer(data); }, 900);
+  return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [data]);
+
+
+  
   useEffect(() => { void loadAll(); }, []);
 
   const settings = data?.settings ?? { defaultCity: "Duisburg", defaultLat: 51.4344, defaultLng: 6.7623, defaultZoom: 12, updatedAt: new Date().toISOString() };
@@ -108,8 +172,9 @@ export default function AppShell() {
           zones={zones}
           selectedLocationId={selectedLocationId}
           onSelectLocation={(id) => { setSelectedLocationId(id); setPanel("location"); }}
-          onCreateLocation={(loc: Location) => { saveAll({ ...data, locations: [loc, ...data.locations] }); }}
-          onCreateZone={(zone: Zone) => { saveAll({ ...data, zones: [zone, ...data.zones] }); }}
+          onCreateLocation={(loc: Location) => { apply({ ...data, locations: [loc, ...data.locations] }); }}
+          onCreateZone={(zone: Zone) => { apply({ ...data, zones: [zone, ...data.zones] }); }}
+          onViewportChanged={(bbox) => { void fetchBBox(bbox); }}
         />
       </div>
 
@@ -119,7 +184,7 @@ export default function AppShell() {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <H2>Status</H2>
-                <Muted className="mt-1">{loading ? "Arbeite..." : `Start: ${settings.defaultCity}`}</Muted>
+                <Muted className="mt-1">{(loading || syncing) ? "Arbeite..." : `Start: ${settings.defaultCity}`}</Muted>
               </div>
               <Pill>{role}</Pill>
             </div>
@@ -135,19 +200,19 @@ export default function AppShell() {
 
           {panel === "location" ? (
             selectedLocation ? (
-              <LocationPanel role={role} canCreate={canCreate} canDelete={canDelete} data={data} location={selectedLocation} signs={selectedSigns} onSave={saveAll} />
+              <LocationPanel role={role} canCreate={canCreate} canDelete={canDelete} data={data} location={selectedLocation} signs={selectedSigns} onSave={apply} />
             ) : (
               <Card><H2>Keine Auswahl</H2><Muted className="mt-2">Marker anklicken oder „Standort +“ nutzen.</Muted></Card>
             )
           ) : panel === "zones" ? (
-            <ZonesPanel role={role} canDelete={canDelete} data={data} zones={zones} onSave={saveAll} />
+            <ZonesPanel role={role} canDelete={canDelete} data={data} zones={zones} onSave={apply} />
           ) : (
-            <SettingsPanel role={role} settings={settings} onSaved={(s) => saveAll({ ...data, settings: s })} />
+            <SettingsPanel role={role} settings={settings} onSaved={(s) => apply({ ...data, settings: s })} />
           )}
         </div>
       </aside>
 
-      <MobileSheet role={role} canCreate={canCreate} canDelete={canDelete} loading={loading} error={error} filters={filters} setFilters={setFilters} panel={panel} setPanel={setPanel} data={data} selectedLocation={selectedLocation} selectedSigns={selectedSigns} zones={zones} settings={settings} onSave={saveAll} />
+      <MobileSheet role={role} canCreate={canCreate} canDelete={canDelete} loading={loading} error={error} filters={filters} setFilters={setFilters} panel={panel} setPanel={setPanel} data={data} selectedLocation={selectedLocation} selectedSigns={selectedSigns} zones={zones} settings={settings} onSave={apply} />
     </div>
   );
 }
@@ -170,7 +235,7 @@ function MobileSheet(props: any) {
             </div>
 
             <div className="px-4 pb-4">
-              <Muted>{loading ? "Arbeite..." : `Start: ${settings.defaultCity}`}</Muted>
+              <Muted>{(loading || syncing) ? "Arbeite..." : `Start: ${settings.defaultCity}`}</Muted>
               {error ? <div className="mt-3 rounded-2xl border border-rose-800 bg-rose-500/10 p-3 text-sm text-rose-200">{error}</div> : null}
               <div className="mt-3"><FiltersPanel value={filters} onChange={setFilters} /></div>
               <div className="mt-3 flex flex-wrap gap-2">

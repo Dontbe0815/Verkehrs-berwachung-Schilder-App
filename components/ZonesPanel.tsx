@@ -1,6 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import { Button, Card, H2, Input, Label, Muted, Textarea, Switch, Pill } from "@/components/ui";
+import VirtualList from "@/components/VirtualList";
 import type { AppData, Zone } from "@/lib/types";
 
 const fmtDE = (iso: string | null) => {
@@ -41,6 +42,41 @@ export default function ZonesPanel(props: {
       <Muted className="mt-2">Zonen zeichnest du über „Zone +“ auf der Karte. Rechteck ist deaktiviert (nur Polygon).</Muted>
 
       {zones.length === 0 ? <Muted className="mt-3">Noch keine Zonen.</Muted> : (
+            zones.length > 40 ? (
+              <div className="mt-4">
+                <VirtualList
+                  items={zones}
+                  itemHeight={120}
+                  height={520}
+                  renderItem={(z) => (
+                    <div className="px-3 py-2">
+                      <div className="rounded-3xl border border-zinc-800 bg-zinc-950/40 p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <div className="text-sm font-semibold">{z.name}</div>
+                              {z.isTemporary ? <Pill>mobil</Pill> : null}
+                              {z.state === "expired" ? <Pill>expired</Pill> : null}
+                            </div>
+                            {z.validity ? <div className="mt-1 text-xs text-zinc-300">Gültigkeit: {z.validity}</div> : null}
+                            {z.expiresAt ? <div className="mt-1 text-xs text-zinc-300">Ablauf: {fmtDE(z.expiresAt)}</div> : null}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button variant="ghost" onClick={() => setOpenId(openId === z.id ? null : z.id)} disabled={role === "spectator"}>
+                              {openId === z.id ? "Schließen" : "Bearbeiten"}
+                            </Button>
+                            <Button variant="ghost" onClick={() => deleteZone(z.id)} disabled={!canDelete}>Löschen</Button>
+                          </div>
+                        </div>
+                        {openId === z.id ? (
+                          <div className="mt-3 text-xs text-zinc-400">Details im Bearbeiten-Modus anzeigen.</div>
+                        ) : null}
+                      </div>
+                    </div>
+                  )}
+                />
+              </div>
+            ) : (
         <div className="mt-4 space-y-3">
           {zones.map((z) => (
             <div key={z.id} className="rounded-3xl border border-zinc-800 bg-zinc-950/40 p-4">

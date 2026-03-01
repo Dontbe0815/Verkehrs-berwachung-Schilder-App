@@ -1,6 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import { Button, Card, H2, Input, Label, Muted, Select, Textarea, Switch, Pill } from "@/components/ui";
+import VirtualList from "@/components/VirtualList";
 import type { AppData, Location, Sign, SignDirection } from "@/lib/types";
 
 function uid(): string {
@@ -17,6 +18,21 @@ const MAIN_SIGNS = [
   { code: "241", label: "Getrennter Geh- und Radweg" }
 ];
 
+
+const fmtDE = (iso: string | null) => {
+  if (!iso) return "";
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return iso;
+  return `${m[3]}.${m[2]}.${m[1]}`;
+};
+
+const LS_LAST = "vz_last_sign_defaults";
+const loadLast = () => {
+  try { return JSON.parse(localStorage.getItem(LS_LAST) || "null"); } catch { return null; }
+};
+const saveLast = (v: any) => {
+  try { localStorage.setItem(LS_LAST, JSON.stringify(v)); } catch {}
+};
 export default function LocationPanel(props: {
   role: "admin" | "creator" | "spectator";
   canCreate: boolean;
@@ -31,6 +47,13 @@ export default function LocationPanel(props: {
   const [status, setStatus] = useState(location.status);
   const [lastVerified, setLastVerified] = useState(location.lastVerified ?? "");
   const [msg, setMsg] = useState("");
+      const [check, setCheck] = useState<{ verified: boolean; photo: boolean; zone: boolean; note: boolean }>(() => {
+        if (typeof window === "undefined") return { verified:false, photo:false, zone:false, note:false };
+        try {
+          const raw = localStorage.getItem(`vz_chk_${location.id}`);
+          return raw ? JSON.parse(raw) : { verified:false, photo:false, zone:false, note:false };
+        } catch { return { verified:false, photo:false, zone:false, note:false }; }
+      });
 
   const initial = useMemo(() => {
     const f = MAIN_SIGNS[0]!;
@@ -48,7 +71,12 @@ export default function LocationPanel(props: {
   }, []);
   const [draft, setDraft] = useState(initial);
 
-  function requireWrite(): boolean {
+  useEffect(() => {
+        if (typeof window === "undefined") return;
+        try { localStorage.setItem(`vz_chk_${location.id}`, JSON.stringify(check)); } catch {}
+      }, [check, location.id]);
+
+      function requireWrite(): boolean {
     if (!data) return false;
     if (role === "spectator") { setMsg("Spectator darf nur ansehen."); return false; }
     return true;
@@ -106,6 +134,7 @@ export default function LocationPanel(props: {
       updatedAt: now
     };
     onSave({ ...data, signs: [s, ...data.signs] });
+        saveLast({ mainCode: s.mainCode, mainLabel: s.mainLabel, direction: s.direction, validity: s.validity, isTemporary: s.isTemporary });
     setDraft({ ...initial, validity: "", notes: "", additionalText: "[]", isTemporary: false, expiresAt: "" });
     setMsg("");
   }
@@ -198,32 +227,59 @@ export default function LocationPanel(props: {
       <Card>
         <H2>Schilder</H2>
         {signs.length === 0 ? <Muted className="mt-2">Keine Schilder am Standort.</Muted> : (
-          <div className="mt-3 space-y-3">
-            {signs.map((s) => (
-              <div key={s.id} className={`rounded-3xl border border-zinc-800 p-4 ${s.state === "expired" ? "bg-zinc-950/20 opacity-80" : "bg-zinc-950/40"}`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="flex items-center gap-2">
-                            <div className="h-9 w-9 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950/60">
-                              <Image src={`/vz/${s.mainCode}.svg`} alt={s.mainLabel} width={36} height={36} />
-                            </div>
-                            <div className="text-sm font-semibold">{s.mainCode} – {s.mainLabel}</div>
-                          </div>
+      signs.length > 40 ? (
+        <div className="mt-3">
+          <VirtualList
+            items={signs}
+            itemHeight={92}
+            height={520}
+            renderItem={(s) => (
+              <div className={`px-3 py-2 ${s.state === "expired" ? "opacity-80" : ""}`}>
+                <div className="rounded-3xl border border-zinc-800 bg-zinc-950/40 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold truncate">{s.mainCode} – {s.mainLabel}</div>
+                      <div className="mt-1 text-xs text-zinc-400 truncate">{s.validity ? `Gültigkeit: ${s.validity}` : (s.notes ?? "")}</div>
+                    </div>
+                    <div className="flex items-center gap-2">
                       {s.isTemporary ? <Pill>mobil</Pill> : null}
                       {s.state === "expired" ? <Pill>expired</Pill> : null}
+                      <Button variant="ghost" onClick={() => deleteSign(s.id)} disabled={!canDelete}>Löschen</Button>
                     </div>
-                    <div className="mt-1 text-xs text-zinc-400">Richtung: {s.direction} • Confidence: {s.confidence}</div>
-                    {s.expiresAt ? <div className="mt-1 text-xs text-zinc-300">Ablauf: {isoToDE(s.expiresAt)}</div> : null}
-                    {s.validity ? <div className="mt-1 text-xs text-zinc-300">Gültigkeit: {s.validity}</div> : null}
-                    {s.notes ? <div className="mt-2 text-sm text-zinc-200">{s.notes}</div> : null}
                   </div>
-                  <Button variant="ghost" onClick={() => deleteSign(s.id)} disabled={!canDelete}>Löschen</Button>
                 </div>
               </div>
-            ))}
-          </div>
-        )}
+            )}
+          />
+        </div>
+      ) : (
+        <div className="mt-3 space-y-3">
+          {signs.map((s) => (
+            <div key={s.id} className={`rounded-3xl border border-zinc-800 p-4 ${s.state === "expired" ? "bg-zinc-950/20 opacity-80" : "bg-zinc-950/40"}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className="h-9 w-9 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950/60">
+                        {/* icon is optional, keep if present */}
+                      </div>
+                      <div className="text-sm font-semibold">{s.mainCode} – {s.mainLabel}</div>
+                    </div>
+                    {s.isTemporary ? <Pill>mobil</Pill> : null}
+                    {s.state === "expired" ? <Pill>expired</Pill> : null}
+                  </div>
+                  <div className="mt-1 text-xs text-zinc-400">Richtung: {DIRS.find(d => d.v === s.direction)?.label ?? s.direction} • Confidence: {s.confidence}</div>
+                  {s.expiresAt ? <div className="mt-1 text-xs text-zinc-300">Ablauf: {fmtDE(s.expiresAt)}</div> : null}
+                  {s.validity ? <div className="mt-1 text-xs text-zinc-300">Gültigkeit: {s.validity}</div> : null}
+                  {s.notes ? <div className="mt-2 text-sm text-zinc-200 whitespace-pre-wrap">{s.notes}</div> : null}
+                </div>
+                <Button variant="ghost" onClick={() => deleteSign(s.id)} disabled={!canDelete}>Löschen</Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )
+    )}
       </Card>
     </div>
   );

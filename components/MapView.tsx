@@ -2,7 +2,7 @@
 import L from "leaflet";
 import "leaflet.markercluster";
 import "leaflet-draw";
-import { MapContainer, TileLayer, useMap, ZoomControl } from "react-leaflet";
+import { MapContainer, TileLayer, useMap, ZoomControl, useMapEvents } from "react-leaflet";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Location, Zone, AppSettings } from "@/lib/types";
 import { Button } from "@/components/ui";
@@ -17,6 +17,22 @@ const DefaultIcon = L.icon({
 
 function uid(): string {
   return (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}_${Math.random().toString(16).slice(2)}`);
+}
+
+function ViewportReporter({ onBBox }: { onBBox: (bbox: string) => void }) {
+  useMapEvents({
+    moveend: (e) => {
+      const b = e.target.getBounds();
+      const bbox = `${b.getWest()},${b.getSouth()},${b.getEast()},${b.getNorth()}`;
+      onBBox(bbox);
+    },
+    zoomend: (e) => {
+      const b = e.target.getBounds();
+      const bbox = `${b.getWest()},${b.getSouth()},${b.getEast()},${b.getNorth()}`;
+      onBBox(bbox);
+    }
+  });
+  return null;
 }
 
 function ClusterLayer({ locations, onSelect, selectedId }: { locations: Location[]; onSelect: (id: string) => void; selectedId: string | null }) {
@@ -130,6 +146,7 @@ export default function MapView(props: {
   onSelectLocation: (id: string) => void;
   onCreateLocation: (loc: Location) => void;
   onCreateZone: (zone: Zone) => void;
+  onViewportChanged?: (bbox: string) => void;
 }) {
   const { settings, canCreate, locations, zones, selectedLocationId, onSelectLocation, onCreateLocation, onCreateZone } = props;
   const [addMode, setAddMode] = useState(false);
@@ -173,18 +190,35 @@ onCreateZone({
 
   return (
     <div className="relative h-[calc(100vh-56px)] w-full">
-      <div className="absolute left-3 top-3 z-[1000] flex flex-wrap gap-2 rounded-3xl border border-zinc-800 bg-zinc-950/70 p-2 backdrop-blur">
+      <div className="absolute left-3 top-16 z-[1000] flex flex-wrap gap-2 rounded-3xl border border-zinc-800 bg-zinc-950/70 p-2 backdrop-blur">
         <Button onClick={() => { setAddMode(v => !v); setZoneMode(false); }} variant={addMode ? "primary" : "ghost"} disabled={!canCreate}>
           {addMode ? "Standort: AN" : "Standort +"}
         </Button>
         <Button onClick={() => { setZoneMode(v => !v); setAddMode(false); }} variant={zoneMode ? "primary" : "ghost"} disabled={!canCreate}>
           {zoneMode ? "Zonen: AN" : "Zone +"}
         </Button>
-      </div>
+        </div>
 
-      <MapContainer center={center} zoom={settings.defaultZoom} className="h-full w-full" preferCanvas>
+  {/* Mobile Floating Action Button */}
+  <div className="lg:hidden fixed right-4 bottom-24 z-[1400] safe-bottom">
+    <button
+      className="h-14 w-14 rounded-full border border-zinc-700 bg-zinc-950/85 shadow-soft backdrop-blur text-zinc-100 text-3xl leading-none"
+      onClick={() => {
+        // simple quick action: toggle addMode if canCreate else ignore
+        if (!canCreate) return alert("Nur Creator/Admin dürfen erstellen.");
+        setAddMode((v) => !v);
+      }}
+      aria-label="Schnell hinzufügen"
+      title="Schnell hinzufügen"
+    >
+      +
+    </button>
+  </div>
+
+<MapContainer center={center} zoom={settings.defaultZoom} className="h-full w-full" preferCanvas>
         <FlyToDefault settings={settings} />
         <ZoomControl position="bottomright" />
+      {onViewportChanged ? <ViewportReporter onBBox={onViewportChanged} /> : null}
       <TileLayer attribution='&copy; OpenStreetMap-Mitwirkende' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
         <ZonesLayer zones={zones} />
         <ClusterLayer locations={locations} onSelect={onSelectLocation} selectedId={selectedLocationId} />

@@ -124,6 +124,84 @@ export async function readAll(): Promise<AppData> {
     name: r.name,
     description: r.description,
     rules: r.rules,
+    validity: r.validity ? String(r.validity) : null,
+    isTemporary: Boolean(r.is_temporary),
+    expiresAt: r.expires_at ? String(r.expires_at) : null,
+    state: (r.state === "expired" ? "expired" : "active"),
+    geojson: r.geojson,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at
+  }));
+
+  return { version: 1, updatedAt: new Date().toISOString(), settings, locations, signs, zones };
+}
+
+export type BBox = { minLat: number; minLng: number; maxLat: number; maxLng: number };
+
+export async function readBBox(bbox: BBox): Promise<AppData> {
+  const sb = supabaseAdmin();
+
+  // Ensure expired mobile signs flip automatically.
+  await autoExpireMobileSigns().catch(() => undefined);
+
+  const [settings, locRes, zoneRes] = await Promise.all([
+    readSettings(),
+    sb
+      .from("locations")
+      .select("*")
+      .gte("lat", bbox.minLat)
+      .lte("lat", bbox.maxLat)
+      .gte("lng", bbox.minLng)
+      .lte("lng", bbox.maxLng)
+      .order("updated_at", { ascending: false }),
+    sb.from("zones").select("*").order("updated_at", { ascending: false })
+  ]);
+
+  if (locRes.error) throw new Error(locRes.error.message);
+  if (zoneRes.error) throw new Error(zoneRes.error.message);
+
+  const locations: Location[] = (locRes.data ?? []).map((r: any) => ({
+    id: r.id,
+    lat: r.lat,
+    lng: r.lng,
+    street: r.street,
+    status: r.status,
+    lastVerified: r.last_verified ? String(r.last_verified) : null
+  }));
+
+  const locationIds = locations.map((l) => l.id);
+  const signRes = locationIds.length
+    ? await sb.from("signs").select("*").in("location_id", locationIds).order("updated_at", { ascending: false })
+    : { data: [], error: null as any };
+
+  if ((signRes as any).error) throw new Error((signRes as any).error.message);
+
+  const signs: Sign[] = ((signRes as any).data ?? []).map((r: any) => ({
+    id: r.id,
+    locationId: r.location_id,
+    mainCode: r.main_code,
+    mainLabel: r.main_label,
+    direction: r.direction,
+    validity: r.validity,
+    additional: Array.isArray(r.additional) ? r.additional : [],
+    notes: r.notes,
+    confidence: r.confidence,
+    isTemporary: Boolean(r.is_temporary),
+    expiresAt: r.expires_at ? String(r.expires_at) : null,
+    state: (r.state === "expired" ? "expired" : "active"),
+    createdAt: r.created_at,
+    updatedAt: r.updated_at
+  }));
+
+  const zones: Zone[] = (zoneRes.data ?? []).map((r: any) => ({
+    id: r.id,
+    name: r.name,
+    description: r.description,
+    rules: r.rules,
+    validity: r.validity ? String(r.validity) : null,
+    isTemporary: Boolean(r.is_temporary),
+    expiresAt: r.expires_at ? String(r.expires_at) : null,
+    state: (r.state === "expired" ? "expired" : "active"),
     geojson: r.geojson,
     createdAt: r.created_at,
     updatedAt: r.updated_at
@@ -202,7 +280,7 @@ async function deleteMissing(table: "locations" | "signs" | "zones", keepIds: st
   if (del.error) throw new Error(del.error.message);
 }
 
-export async function applySnapshot(next: AppData, allowDeletes: boolean): Promise<AppData> {
+export async function applySnapshotWrite(next: AppData, allowDeletes: boolean): Promise<void> {
   // Settings can be updated independently elsewhere; we accept it here too.
   await writeSettings(next.settings).catch(() => undefined);
 
@@ -216,6 +294,9 @@ export async function applySnapshot(next: AppData, allowDeletes: boolean): Promi
     await deleteMissing("zones", next.zones.map((z) => z.id));
     await deleteMissing("locations", next.locations.map((l) => l.id));
   }
+}
 
+export async function applySnapshot(next: AppData, allowDeletes: boolean): Promise<AppData> {
+  await applySnapshotWrite(next, allowDeletes);
   return readAll();
 }
