@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96">
+  <rect x="0" y="0" width="96" height="96" rx="18" fill="#0b0b0f" stroke="#3f3f46" />
+  <circle cx="48" cy="42" r="24" fill="#09090b" stroke="#e11d48" stroke-width="6"/>
+  <text x="48" y="48" text-anchor="middle" font-size="14" fill="#f4f4f5" font-family="ui-sans-serif, system-ui" font-weight="700">237</text>
+  <text x="48" y="78" text-anchor="middle" font-size="9" fill="#a1a1aa" font-family="ui-sans-serif, system-ui">Radweg</text>
+</svg>

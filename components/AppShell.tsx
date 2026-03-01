@@ -79,7 +79,7 @@ export default function AppShell() {
       }
       if (q) {
         const inStreet = (loc.street ?? "").toLowerCase().includes(q);
-        const inSigns = visibleSigns.some((s) => (s.mainCode + " " + s.mainLabel + " " + (s.additionalText ?? "") + " " + (s.notes ?? "")).toLowerCase().includes(q));
+        const inSigns = visibleSigns.some((s) => (s.mainCode + " " + s.mainLabel + " " + (s.notes ?? "")).toLowerCase().includes(q));
         if (!inStreet && !inSigns) return false;
       }
       return true;

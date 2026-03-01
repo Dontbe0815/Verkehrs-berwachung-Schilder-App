@@ -2,7 +2,7 @@
 import L from "leaflet";
 import "leaflet.markercluster";
 import "leaflet-draw";
-import { MapContainer, TileLayer, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, useMap, ZoomControl } from "react-leaflet";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Location, Zone, AppSettings } from "@/lib/types";
 import { Button } from "@/components/ui";
@@ -14,17 +14,6 @@ const DefaultIcon = L.icon({
   iconSize: [25, 41],
   iconAnchor: [12, 41]
 });
-
-function metersBetween(aLat: number, aLng: number, bLat: number, bLng: number): number {
-  const R = 6371000;
-  const toRad = (x: number) => (x * Math.PI) / 180;
-  const dLat = toRad(bLat - aLat);
-  const dLng = toRad(bLng - aLng);
-  const lat1 = toRad(aLat);
-  const lat2 = toRad(bLat);
-  const h = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLng/2)**2;
-  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
-}
 
 function uid(): string {
   return (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}_${Math.random().toString(16).slice(2)}`);
@@ -92,7 +81,7 @@ function DrawControls({ enabled, onCreated }: { enabled: boolean; onCreated: (ge
     if (!drawRef.current) {
       drawRef.current = new L.Control.Draw({
         // leaflet-draw typings expect option objects (or false), not boolean true
-        draw: { polygon: {}, rectangle: {}, polyline: false, circle: false, circlemarker: false, marker: false } as any,
+        draw: { polygon: {}, rectangle: false, polyline: false, circle: false, circlemarker: false, marker: false } as any,
         edit: false as any
       });
       map.addControl(drawRef.current);
@@ -156,9 +145,27 @@ export default function MapView(props: {
     if (!canCreate) return alert("Nur Creator/Admin dürfen erstellen.");
     const name = (prompt("Zonen-Name:", "Zone") ?? "Zone").trim() || "Zone";
     const desc = (prompt("Beschreibung (optional):", "") ?? "").trim();
-    const rules = (prompt("Sonderregeln (optional):", "") ?? "").trim();
-    const now = new Date().toISOString();
-    onCreateZone({ id: uid(), name, description: desc?desc:null, rules: rules?rules:null, geojson: gj as any, createdAt: now, updatedAt: now });
+const rules = (prompt("Regeln in der Zone (optional):", "") ?? "").trim();
+const validity = (prompt("Gültigkeit (optional, z.B. Mo–Fr 7–18 Uhr):", "") ?? "").trim();
+const isTemporary = confirm("Ist das eine mobile/temporäre Zone? (OK=ja, Abbrechen=nein)");
+let expiresAt = "";
+if (isTemporary) {
+  expiresAt = (prompt("Ablaufdatum (YYYY-MM-DD):", "") ?? "").trim();
+}
+const now = new Date().toISOString();
+onCreateZone({
+  id: uid(),
+  name,
+  description: desc?desc:null,
+  rules: rules?rules:null,
+  validity: validity?validity:null,
+  isTemporary,
+  expiresAt: isTemporary ? (expiresAt || null) : null,
+  state: "active",
+  geojson: gj as any,
+  createdAt: now,
+  updatedAt: now
+});
     setZoneMode(false);
   }
 
@@ -177,7 +184,8 @@ export default function MapView(props: {
 
       <MapContainer center={center} zoom={settings.defaultZoom} className="h-full w-full" preferCanvas>
         <FlyToDefault settings={settings} />
-        <TileLayer attribution='&copy; OpenStreetMap-Mitwirkende' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+        <ZoomControl position="bottomright" />
+      <TileLayer attribution='&copy; OpenStreetMap-Mitwirkende' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
         <ZonesLayer zones={zones} />
         <ClusterLayer locations={locations} onSelect={onSelectLocation} selectedId={selectedLocationId} />
         <DrawControls enabled={zoneMode} onCreated={createZoneFromGeojson} />

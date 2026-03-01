@@ -1,21 +1,21 @@
 "use client";
 import { useMemo, useState } from "react";
-import Image from "next/image";
 import { Button, Card, H2, Input, Label, Muted, Select, Textarea, Switch, Pill } from "@/components/ui";
-import type { AppData, Location, Sign } from "@/lib/types";
-import VZSelector from "@/components/VZSelector";
+import type { AppData, Location, Sign, SignDirection } from "@/lib/types";
 
 function uid(): string {
   return (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}_${Math.random().toString(16).slice(2)}`);
 }
 
-const DIRS = [
-  { v: "both", label: "Beidseitig" },
-  { v: "left", label: "Links" },
-  { v: "right", label: "Rechts" },
-  { v: "start", label: "Beginn" },
-  { v: "end", label: "Ende" }
-] as const;
+const MAIN_SIGNS = [
+  { code: "283", label: "Absolutes Haltverbot" },
+  { code: "286", label: "Eingeschränktes Haltverbot" },
+  { code: "314", label: "Parken" },
+  { code: "315", label: "Parken auf Gehwegen" },
+  { code: "237", label: "Radweg" },
+  { code: "240", label: "Gemeinsamer Geh- und Radweg" },
+  { code: "241", label: "Getrennter Geh- und Radweg" }
+];
 
 export default function LocationPanel(props: {
   role: "admin" | "creator" | "spectator";
@@ -31,20 +31,21 @@ export default function LocationPanel(props: {
   const [status, setStatus] = useState(location.status);
   const [lastVerified, setLastVerified] = useState(location.lastVerified ?? "");
   const [msg, setMsg] = useState("");
-  const [uploading, setUploading] = useState(false);
 
-  const initial = useMemo(() => ({
-    mainCode: "283",
-    mainLabel: "Absolutes Haltverbot",
-    direction: "both" as const,
-    validity: "",
-    additionalText: "",
-    notes: "",
-    confidence: "probable" as const,
-    isTemporary: false,
-    expiresAt: "",
-    imageUrl: "" as string | null
-  }), []);
+  const initial = useMemo(() => {
+    const f = MAIN_SIGNS[0]!;
+    return {
+      mainCode: f.code,
+      mainLabel: f.label,
+      direction: "both" as SignDirection,
+      validity: "",
+      additionalText: "[]",
+      notes: "",
+      confidence: "probable" as const,
+      isTemporary: false,
+      expiresAt: ""
+    };
+  }, []);
   const [draft, setDraft] = useState(initial);
 
   function requireWrite(): boolean {
@@ -67,25 +68,24 @@ export default function LocationPanel(props: {
     onSave({ ...data, locations: data.locations.filter((l) => l.id !== location.id), signs: data.signs.filter((s) => s.locationId !== location.id) });
   }
 
-  async function uploadImage(file: File) {
-    setUploading(true); setMsg("");
-    try {
-      const fd = new FormData();
-      fd.set("file", file);
-      const r = await fetch("/api/upload/sign-image", { method: "POST", body: fd });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j?.error || "Upload fehlgeschlagen");
-      setDraft((p) => ({ ...p, imageUrl: j.url }));
-    } catch (e) {
-      setMsg(e instanceof Error ? e.message : "Upload fehlgeschlagen");
-    } finally {
-      setUploading(false);
-    }
+  function pickMain(code: string) {
+    const f = MAIN_SIGNS.find((x) => x.code === code);
+    setDraft((p) => ({ ...p, mainCode: code, mainLabel: f ? f.label : p.mainLabel }));
   }
 
   function addSign() {
     if (!data) return;
     if (!canCreate) return setMsg("Nur Creator/Admin dürfen erstellen.");
+
+    let additional: string[] = [];
+    try {
+      const a = draft.additionalText.trim() ? JSON.parse(draft.additionalText) : [];
+      if (!Array.isArray(a)) throw new Error("Zusatzzeichen muss JSON-Array sein");
+      additional = a.map(String);
+    } catch (e) {
+      return setMsg(e instanceof Error ? e.message : "Ungültiges JSON");
+    }
+
     if (draft.isTemporary && !draft.expiresAt) return setMsg("Bei mobiler Beschilderung bitte ein Ablaufdatum setzen.");
 
     const now = new Date().toISOString();
@@ -96,10 +96,8 @@ export default function LocationPanel(props: {
       mainLabel: draft.mainLabel,
       direction: draft.direction,
       validity: draft.validity.trim()?draft.validity.trim():null,
-      additional: [],
-      additionalText: draft.additionalText.trim()?draft.additionalText.trim():null,
+      additional,
       notes: draft.notes.trim()?draft.notes.trim():null,
-      imageUrl: draft.imageUrl ? String(draft.imageUrl) : null,
       confidence: draft.confidence,
       isTemporary: draft.isTemporary,
       expiresAt: draft.isTemporary ? (draft.expiresAt || null) : null,
@@ -108,7 +106,7 @@ export default function LocationPanel(props: {
       updatedAt: now
     };
     onSave({ ...data, signs: [s, ...data.signs] });
-    setDraft({ ...initial, validity: "", notes: "", additionalText: "", isTemporary: false, expiresAt: "", imageUrl: "" });
+    setDraft({ ...initial, validity: "", notes: "", additionalText: "[]", isTemporary: false, expiresAt: "" });
     setMsg("");
   }
 
@@ -139,14 +137,15 @@ export default function LocationPanel(props: {
             <div>
               <Label>Status</Label>
               <Select value={status} onChange={(e) => setStatus(e.target.value as any)} disabled={role === "spectator"}>
-                <option value="needs_review">needs_review</option>
-                <option value="active">active</option>
-                <option value="outdated">outdated</option>
+                <option value="needs_review">Prüfen</option>
+                <option value="active">Aktiv</option>
+                <option value="outdated">Veraltet</option>
               </Select>
             </div>
             <div>
               <Label>Zuletzt geprüft</Label>
               <Input type="date" value={lastVerified} onChange={(e) => setLastVerified(e.target.value)} disabled={role === "spectator"} />
+              <div className="mt-1 text-xs text-zinc-400">Anzeige: {isoToDE(lastVerified)} (TT.MM.JJJJ)</div>
             </div>
           </div>
 
@@ -156,22 +155,24 @@ export default function LocationPanel(props: {
 
       <Card>
         <H2>Neues Schild</H2>
-        <Muted className="mt-2">Suche nach Nummer (z.B. VZ 283). Zusatzzeichen als Freitext. Foto optional.</Muted>
-
-        <div className="mt-4 space-y-4">
-          <VZSelector
-            value={{ code: draft.mainCode, label: draft.mainLabel }}
-            disabled={!canCreate}
-            onChange={(v) => setDraft((p) => ({ ...p, mainCode: v.code, mainLabel: v.label }))}
-          />
-
+        <Muted className="mt-2">Creator/Admin: erstellen. Admin: löschen. Mobile Schilder laufen automatisch ab.</Muted>
+        <div className="mt-3 space-y-3">
           <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Hauptzeichen</Label>
+              <Select value={draft.mainCode} onChange={(e) => pickMain(e.target.value)} disabled={!canCreate}>
+                {MAIN_SIGNS.map((s) => <option key={s.code} value={s.code}>{s.code} – {s.label}</option>)}
+              </Select>
+            </div>
             <div>
               <Label>Richtung</Label>
               <Select value={draft.direction} onChange={(e) => setDraft((p) => ({ ...p, direction: e.target.value as any }))} disabled={!canCreate}>
-                {DIRS.map((d) => <option key={d.v} value={d.v}>{d.label}</option>)}
+                <option value="both">both</option><option value="left">left</option><option value="right">right</option><option value="start">start</option><option value="end">end</option>
               </Select>
             </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>Mobil (temporär)</Label>
               <div className="mt-1 flex items-center justify-between rounded-2xl border border-zinc-800 bg-zinc-950/40 px-3 py-2">
@@ -179,41 +180,18 @@ export default function LocationPanel(props: {
                 <Switch checked={draft.isTemporary} onChange={(v) => setDraft((p) => ({ ...p, isTemporary: v }))} disabled={!canCreate} />
               </div>
             </div>
+            <div>
+              <Label>Ablaufdatum</Label>
+              <Input type="date" value={draft.expiresAt} onChange={(e) => setDraft((p) => ({ ...p, expiresAt: e.target.value }))} disabled={!canCreate || !draft.isTemporary} />
+              <div className="mt-1 text-xs text-zinc-400">Anzeige: {isoToDE(draft.expiresAt)} (TT.MM.JJJJ)</div>
+            </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div><Label>Ablaufdatum</Label><Input type="date" value={draft.expiresAt} onChange={(e) => setDraft((p) => ({ ...p, expiresAt: e.target.value }))} disabled={!canCreate || !draft.isTemporary} /></div>
-            <div><Label>Gültigkeit</Label><Input value={draft.validity} onChange={(e) => setDraft((p) => ({ ...p, validity: e.target.value }))} disabled={!canCreate} placeholder="Mo–Fr 7–18 Uhr" /></div>
-          </div>
-
-          <div><Label>Zusatzzeichen (Freitext)</Label><Input value={draft.additionalText} onChange={(e) => setDraft((p) => ({ ...p, additionalText: e.target.value }))} disabled={!canCreate} placeholder="z.B. Anwohner frei, mit Parkschein, 2h" /></div>
+          <div><Label>Gültigkeit</Label><Input value={draft.validity} onChange={(e) => setDraft((p) => ({ ...p, validity: e.target.value }))} disabled={!canCreate} placeholder="Mo-Fr 7-18 Uhr" /></div>
+          <div><Label>Zusatzzeichen (JSON Array)</Label><Input value={draft.additionalText} onChange={(e) => setDraft((p) => ({ ...p, additionalText: e.target.value }))} disabled={!canCreate} /></div>
           <div><Label>Notizen</Label><Textarea value={draft.notes} onChange={(e) => setDraft((p) => ({ ...p, notes: e.target.value }))} rows={3} disabled={!canCreate} /></div>
 
-          <div className="rounded-3xl border border-zinc-800 bg-zinc-950/40 p-3">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <div className="text-sm font-semibold">Schildfoto (optional)</div>
-                <div className="text-xs text-zinc-400">Auf iPhone öffnet sich Kamera/Galerie.</div>
-              </div>
-              <input
-                type="file"
-                accept="image/*"
-                capture="environment"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) void uploadImage(file);
-                }}
-                disabled={!canCreate || uploading}
-              />
-            </div>
-            {draft.imageUrl ? (
-              <div className="mt-3 overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-950/60">
-                <Image src={draft.imageUrl} alt="Schildfoto" width={900} height={600} className="h-40 w-full object-cover" />
-              </div>
-            ) : null}
-          </div>
-
-          <Button onClick={addSign} disabled={!canCreate || uploading}>{uploading ? "Upload..." : "Schild speichern"}</Button>
+          <Button onClick={addSign} disabled={!canCreate}>Schild speichern</Button>
         </div>
       </Card>
 
@@ -224,24 +202,21 @@ export default function LocationPanel(props: {
             {signs.map((s) => (
               <div key={s.id} className={`rounded-3xl border border-zinc-800 p-4 ${s.state === "expired" ? "bg-zinc-950/20 opacity-80" : "bg-zinc-950/40"}`}>
                 <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
+                  <div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <div className="text-sm font-semibold">{s.mainCode} – {s.mainLabel}</div>
+                      <div className="flex items-center gap-2">
+                            <div className="h-9 w-9 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950/60">
+                              <Image src={`/vz/${s.mainCode}.svg`} alt={s.mainLabel} width={36} height={36} />
+                            </div>
+                            <div className="text-sm font-semibold">{s.mainCode} – {s.mainLabel}</div>
+                          </div>
                       {s.isTemporary ? <Pill>mobil</Pill> : null}
                       {s.state === "expired" ? <Pill>expired</Pill> : null}
                     </div>
-                    <div className="mt-1 text-xs text-zinc-400">
-                      Richtung: {DIRS.find(d => d.v === s.direction)?.label ?? s.direction} • Confidence: {s.confidence}
-                    </div>
-                    {s.expiresAt ? <div className="mt-1 text-xs text-zinc-300">Ablauf: {s.expiresAt}</div> : null}
+                    <div className="mt-1 text-xs text-zinc-400">Richtung: {s.direction} • Confidence: {s.confidence}</div>
+                    {s.expiresAt ? <div className="mt-1 text-xs text-zinc-300">Ablauf: {isoToDE(s.expiresAt)}</div> : null}
                     {s.validity ? <div className="mt-1 text-xs text-zinc-300">Gültigkeit: {s.validity}</div> : null}
-                    {s.additionalText ? <div className="mt-1 text-xs text-zinc-300">Zusatz: {s.additionalText}</div> : null}
                     {s.notes ? <div className="mt-2 text-sm text-zinc-200">{s.notes}</div> : null}
-                    {s.imageUrl ? (
-                      <div className="mt-3 overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-950/60">
-                        <Image src={s.imageUrl} alt="Schildfoto" width={900} height={600} className="h-36 w-full object-cover" />
-                      </div>
-                    ) : null}
                   </div>
                   <Button variant="ghost" onClick={() => deleteSign(s.id)} disabled={!canDelete}>Löschen</Button>
                 </div>

@@ -60,6 +60,8 @@ on conflict (id) do nothing;
 
 create index if not exists signs_location_id_idx on public.signs(location_id);
 
--- v3: simplified additional sign text + image
-alter table public.signs add column if not exists additional_text text null;
-alter table public.signs add column if not exists image_url text null;
+-- v3i: zone settings
+alter table public.zones add column if not exists validity text null;
+alter table public.zones add column if not exists is_temporary boolean not null default false;
+alter table public.zones add column if not exists expires_at date null;
+alter table public.zones add column if not exists state text not null default 'active';

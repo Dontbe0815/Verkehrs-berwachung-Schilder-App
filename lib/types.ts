@@ -18,10 +18,8 @@ export type Sign = {
   mainLabel: string;
   direction: SignDirection;
   validity: string | null;
-  additional: string[]; // legacy
-  additionalText: string | null;
+  additional: string[];
   notes: string | null;
-  imageUrl: string | null;
   confidence: "confirmed" | "probable" | "unclear";
   isTemporary: boolean;
   expiresAt: string | null; // YYYY-MM-DD
@@ -36,6 +34,13 @@ export type Zone = {
   description: string | null;
   geojson: any;
   rules: string | null;
+
+  // v3i: zone settings like signs
+  validity: string | null;       // e.g. "Mo–Fr 7–18 Uhr"
+  isTemporary: boolean;          // mobile/temporary zone
+  expiresAt: string | null;      // YYYY-MM-DD
+  state: "active" | "expired";
+
   createdAt: string;
   updatedAt: string;
 };
