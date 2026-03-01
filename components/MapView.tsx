@@ -71,7 +71,7 @@ function ZonesLayer({ zones }: { zones: Zone[] }) {
 
 function DrawControls({ enabled, onCreated }: { enabled: boolean; onCreated: (geojson: unknown) => void }) {
   const map = useMap();
-  const drawRef = useRef<L.Control.Draw | null>(null);
+  const drawRef = useRef<any>(null); // leaflet-draw typings vary; keep runtime stable
 
   useEffect(() => {
     if (!enabled) {
