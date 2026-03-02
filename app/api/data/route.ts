@@ -19,7 +19,10 @@ export async function GET(req: NextRequest) {
       if (parts.length !== 4 || parts.some((n) => Number.isNaN(n))) {
         return NextResponse.json({ error: "Invalid bbox" }, { status: 400 });
       }
-      const [minLng, minLat, maxLng, maxLat] = parts;
+      const minLng = parts[0]!;
+      const minLat = parts[1]!;
+      const maxLng = parts[2]!;
+      const maxLat = parts[3]!;
       const data = await readBBox({ minLat, minLng, maxLat, maxLng });
       return NextResponse.json({ mode: "bbox", bbox, data });
     }
