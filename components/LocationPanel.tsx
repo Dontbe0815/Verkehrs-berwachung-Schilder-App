@@ -269,7 +269,7 @@ export default function LocationPanel(props: {
                     {s.isTemporary ? <Pill>mobil</Pill> : null}
                     {s.state === "expired" ? <Pill>expired</Pill> : null}
                   </div>
-                  <div className="mt-1 text-xs text-zinc-400">Richtung: {DIRS.find(d => d.v === s.direction)?.label ?? s.direction} • Confidence: {s.confidence}</div>
+                  <div className="mt-1 text-xs text-zinc-400">Richtung: {s.direction} • Confidence: {s.confidence}</div>
                   {s.expiresAt ? <div className="mt-1 text-xs text-zinc-300">Ablauf: {fmtDE(s.expiresAt)}</div> : null}
                   {s.validity ? <div className="mt-1 text-xs text-zinc-300">Gültigkeit: {s.validity}</div> : null}
                   {s.notes ? <div className="mt-2 text-sm text-zinc-200 whitespace-pre-wrap">{s.notes}</div> : null}
