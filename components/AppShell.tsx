@@ -251,7 +251,7 @@ function MobileSheet(props: any) {
                     <Card className="p-3"><H2>Keine Auswahl</H2><Muted className="mt-1">Marker anklicken oder hinzufügen.</Muted></Card>
                   )
                 ) : panel === "zones" ? (
-                  <ZonesPanel role={role} canDelete={canDelete} data={data} zones={zones} onSave={onSave} />
+                  <ZonesPanel role={role} canDelete={canDelete} canCreate={canCreate} data={data} zones={zones} onSave={onSave} />
                 ) : (
                   <SettingsPanel role={role} settings={settings} onSaved={(s) => onSave({ ...data, settings: s })} />
                 )}
