@@ -89,7 +89,7 @@ function apply(next: AppData, opts?: { undoLabel?: string; prev?: AppData }) {
   if (opts?.undoLabel && opts?.prev) {
     undoRef.prev = opts.prev;
     undoRef.label = opts.undoLabel;
-    setToast({ open: true, message: `${opts.undoLabel}.`, actionLabel: "Rückgängig", kind: "info", onAction: () => { setData(opts.prev); } });
+    setToast({ open: true, message: `${opts.undoLabel}.`, actionLabel: "Rückgängig", kind: "info", onAction: () => { if (opts.prev) setData(opts.prev); } });
   }
   setData(next);
 }

@@ -1,6 +1,6 @@
 {
   "name": "vz-map-supabase-roles",
-  "version": "3.3.2",
+  "version": "3.3.3",
   "private": true,
   "scripts": {
     "dev": "next dev",
