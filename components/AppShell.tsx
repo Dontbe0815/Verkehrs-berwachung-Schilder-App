@@ -105,7 +105,7 @@ async function syncToServer(snapshot: AppData) {
     setError(e instanceof Error ? e.message : "Save failed");
     setToast({ open: true, message: "Speichern fehlgeschlagen. Prüfe Verbindung/Env.", kind: "error" });
   } finally {
-    setSyncing(false);
+    
   }
 }
 
