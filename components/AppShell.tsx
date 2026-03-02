@@ -94,9 +94,9 @@ function apply(next: AppData, opts?: { undoLabel?: string; prev?: AppData }) {
 }
 
 async function syncToServer(snapshot: AppData) {
-  setSyncing(true); setError("");
+  setError("");
   try {
-    const r = await fetch("/api/data", { method:"PUT", headers:{ "content-type":"application/json" }, body: JSON.stringify(snapshot) });
+    const r = await fetch("/api/data", { method:"PUT", headers:{ "content-type":"application/json" }, body: JSON.stringify({ mode: "partial", data: snapshot }) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j?.error || "Save failed");
     setData(j);
