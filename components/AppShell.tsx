@@ -23,7 +23,6 @@ export default function AppShell() {
   const [data, setData] = useState<AppData | null>(null);
   const [error, setError] = useState<string>("");
   const [loading, setLoading] = useState(false);
-  const [syncing, setSyncing] = useState(false);
   const [toast, setToast] = useState<ToastState>({ open: false, message: "" });
 const [lastBBox, setLastBBox] = useState<string>("");
 
@@ -184,7 +183,7 @@ useEffect(() => {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <H2>Status</H2>
-                <Muted className="mt-1">{(loading || syncing) ? "Arbeite..." : `Start: ${settings.defaultCity}`}</Muted>
+                <Muted className="mt-1">{loading ? "Arbeite..." : `Start: ${settings.defaultCity}`}</Muted>
               </div>
               <Pill>{role}</Pill>
             </div>
@@ -235,7 +234,7 @@ function MobileSheet(props: any) {
             </div>
 
             <div className="px-4 pb-4">
-              <Muted>{(loading || syncing) ? "Arbeite..." : `Start: ${settings.defaultCity}`}</Muted>
+              <Muted>{loading ? "Arbeite..." : `Start: ${settings.defaultCity}`}</Muted>
               {error ? <div className="mt-3 rounded-2xl border border-rose-800 bg-rose-500/10 p-3 text-sm text-rose-200">{error}</div> : null}
               <div className="mt-3"><FiltersPanel value={filters} onChange={setFilters} /></div>
               <div className="mt-3 flex flex-wrap gap-2">
