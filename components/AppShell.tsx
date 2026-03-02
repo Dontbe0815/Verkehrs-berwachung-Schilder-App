@@ -205,7 +205,7 @@ useEffect(() => {
               <Card><H2>Keine Auswahl</H2><Muted className="mt-2">Marker anklicken oder „Standort +“ nutzen.</Muted></Card>
             )
           ) : panel === "zones" ? (
-            <ZonesPanel role={role} canDelete={canDelete} data={data} zones={zones} onSave={apply} />
+            <ZonesPanel role={role} canDelete={canDelete} canCreate={canCreate} data={data} zones={zones} onSave={apply} />
           ) : (
             <SettingsPanel role={role} settings={settings} onSaved={(s) => apply({ ...data, settings: s })} />
           )}
